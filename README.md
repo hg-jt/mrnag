@@ -11,53 +11,11 @@ implementation.
 > SCM tool (e.g. GitHub, GitLab, BitBucket, etc.).
 
 *mrnag* works by taking a minimal project configuration and enriching it through
-a API calls to the associated forge. The result is a hydrated metadata object
-that includes information about the project and it's merge requests. These
-projects are then filtered and processed by a formatter to display/export the
-data.
+API calls to the associated forge. The result is a hydrated metadata object that
+includes information about the project and it's merge requests. These projects
+are then filtered and processed by a formatter to display/export the data.
 
 [forge]: https://en.wikipedia.org/wiki/Forge_(software)
-
-
-## Before You Begin
-
-### Project Dependencies
-
-*mrnag* requires the following dependencies:
-
-* [Python](https://www.python.org/) (3.7.x)
-
-The following dependencies are optional:
-
-* [PyEnv](https://github.com/yyuu/pyenv)
-
-* [Virtualenv](https://virtualenv.pypa.io/)
-
-* [Virtualenvwrapper](https://virtualenvwrapper.readthedocs.org/)
-
-
-To install Python 3.7:
-
-* Install pyenv
-
-* Install Python
-
-    ```sh
-    cd mrnag
-    pyenv install  # the Python version is defined in a file called .python-version
-    ```
-
-If you are using virtualenv/virtualenvwrapper:
-
-```sh
-mkvirtualenv -p $(pyenv which python3.7) mrnag -a .
-```
-                   
-Install Python dependencies:
-
-```
-pip install -r requirements.txt
-```
 
 
 ## Configuring Mr. Nag
@@ -105,4 +63,77 @@ projects:
 - forge: abc
   name: Bar App
   project_id: 16
+```
+
+
+## Using Mr. Nag
+
+### Running Mr. Nag With Docker
+
+*Mr. Nag* is packaged as a Docker image and hosted from Docker Hub.
+
+To run the Mr. Nag docker image, you will need to provide a configuration
+file. Since the application is running inside a container, the easiest way to
+accomplish this is to create a configuration file in a local directory and mount
+that directory to some location in the container. For example, if you have a
+config file called `config.yml` in your home directory, you could run Mr. Nag
+with the following command:
+
+```sh
+docker run --rm -it -v ~:/data hgjt/mrnag:latest -c /data/config.yml
+```
+
+Stepping through this command:
+
+* The `--rm` will remove the container when the command is done executing
+* The `-it` ensures that Mr. Nag is being run interactively
+* The `-v ~:/data` is mounting your local home directory to */data* in the container
+* `hgjt/mrnag:latest` is referencing the *latest* build of the Mr. Nag docker
+  image. This is built from the *develop* branch as changes are pushed/merged.
+* `-c /data/config.yml` is referencing the config file that is mounted inside
+  the container.
+* Any other CLI options can be appended to this command.
+
+> *TIP*: To see the Mr. Nag usage screen, run this command, but replace the `-c
+> /data/config.yml` with `-h`.
+
+
+## Configuring Your Development Environment
+
+### Project Dependencies
+
+*mrnag* requires the following dependencies:
+
+* [Python](https://www.python.org/) (3.7.x)
+
+The following dependencies are optional:
+
+* [PyEnv](https://github.com/yyuu/pyenv)
+
+* [Virtualenv](https://virtualenv.pypa.io/)
+
+* [Virtualenvwrapper](https://virtualenvwrapper.readthedocs.org/)
+
+
+To install Python 3.7:
+
+* Install pyenv
+
+* Install Python
+
+    ```sh
+    cd mrnag
+    pyenv install  # the Python version is defined in a file called .python-version
+    ```
+
+If you are using virtualenv/virtualenvwrapper:
+
+```sh
+mkvirtualenv -p $(pyenv which python3.7) mrnag -a .
+```
+
+Install Python dependencies:
+
+```
+pip install -r requirements.txt
 ```
