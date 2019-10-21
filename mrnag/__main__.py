@@ -16,9 +16,9 @@ def get_cli_parser() -> ArgumentParser:
     wip_group.add_argument('--only-wips',
                            action='store_true',
                            help='Limit results to only MRs marked as a "work in progress"')
-    wip_group.add_argument('--wips', action='store_true', help='Inclide MRs marked as "work in progress" in output.')
-    parser.add_argument('--include', action='append')
-    parser.add_argument('--exclude', action='append')
+    wip_group.add_argument('--wips', action='store_true', help='Include MRs marked as "work in progress" in output.')
+    parser.add_argument('--include', action='append', help='Inclusive filter for MR labels.')
+    parser.add_argument('--exclude', action='append', help='Exclusive filter for MR labels.')
 
     return parser
 
