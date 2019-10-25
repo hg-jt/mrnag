@@ -13,6 +13,7 @@ setup(
     long_description=long_description,
     packages=find_packages(exclude=['tests*']),
     install_requires=[
+        'pendulum==2.0.5',
         'PyYaml==5.1.2',
         'requests==2.22.0'
     ],

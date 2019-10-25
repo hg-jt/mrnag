@@ -2,9 +2,10 @@
 import csv
 import sys
 from argparse import ArgumentParser, Namespace
+from datetime import datetime
 from typing import Iterable
-from mrnag import Project, inclusive_label_filter, exclusive_label_filter, fetch_project_details, filter_non_wips,\
-    filter_wips, parse_config
+from mrnag import Project, aging_filter, inclusive_label_filter, exclusive_label_filter, fetch_project_details,\
+    filter_non_wips, filter_wips, parse_config
 
 
 def get_cli_parser() -> ArgumentParser:
@@ -19,6 +20,7 @@ def get_cli_parser() -> ArgumentParser:
     wip_group.add_argument('--wips', action='store_true', help='Include MRs marked as "work in progress" in output.')
     parser.add_argument('--include', action='append', help='Inclusive filter for MR labels.')
     parser.add_argument('--exclude', action='append', help='Exclusive filter for MR labels.')
+    parser.add_argument('--minimum-age', type=int, help='Minimum age (in days).')
 
     return parser
 
@@ -28,7 +30,8 @@ def csv_formatter(projects: Iterable[Project]) -> None:
 
     :param projects: An iterable collections of projects.
     """
-    headers = ['Name', 'Title', 'Author', 'Created', 'Total Approvals', 'Required Approvals', 'WIP', 'Labels']
+    headers = ['Name', 'Title', 'Author', 'Created', 'Last Updated', 'Total Approvals', 'Required Approvals',
+               'Comments', 'WIP', 'Labels']
     csv_writer = csv.writer(sys.stdout)
 
     csv_writer.writerow(headers)
@@ -39,8 +42,10 @@ def csv_formatter(projects: Iterable[Project]) -> None:
                 mr.title,
                 mr.author,
                 mr.created_at,
+                mr.updated_at,
                 mr.approvals.total,
                 mr.approvals.required,
+                mr.comment_count,
                 mr.wip,
                 ','.join(mr.labels or [])
             ])
@@ -64,6 +69,9 @@ def mrnag():
 
     if args.exclude:
         proj_list = filter(exclusive_label_filter(args.exclude), proj_list)
+
+    if args.minimum_age:
+        proj_list = filter(aging_filter(args.minimum_age), proj_list)
 
     csv_formatter(proj_list)
 

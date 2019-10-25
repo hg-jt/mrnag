@@ -2,10 +2,12 @@
 
 MIT License -- Copyright (c) 2019 hg-jt
 """
-from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
 from os import environ
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
+from pendulum.tz import UTC
 from requests import Response, Session
 from yaml import SafeLoader, load as yml_load
 
@@ -22,10 +24,13 @@ class MergeRequest:
     """Represents metadata about a merge/pull request."""
     title: str
     author: str
-    created_at: str
+    created_at: datetime
+    updated_at: datetime
     approvals: MergeRequestApprovals = field(default_factory=MergeRequestApprovals, init=False)
     labels: List[str] = field(default_factory=list)
     wip: bool = False
+    comment_count: int = 0
+    merge_request_iid: int = None
 
 
 @dataclass
@@ -100,8 +105,11 @@ class Gitlab(Forge):
             merge_request: MergeRequest = MergeRequest(
                 mr['title'],
                 mr.get('author', {}).get('name'),
-                mr['created_at'],
-                mr['labels']
+                self.timestamp_to_datetime(mr['created_at']),
+                self.timestamp_to_datetime(mr['updated_at']),
+                mr['labels'],
+                comment_count=mr['user_notes_count'],
+                merge_request_iid=mr['iid']
             )
 
             resp = self.session.get(
@@ -138,6 +146,24 @@ class Gitlab(Forge):
             project.name = gl_project.get('name', gl_project.get('id'))
 
         return project
+
+    def timestamp_to_datetime(self, timestamp) -> Optional[datetime]:
+        """Convert a timestamp string to a datetime object with timezone info.
+
+        GitLab's API uses timestamp strings in the format: %Y-%m-%dT%H:%M:%S.%fZ.
+
+        :param timestamp: timestamp string.
+        :return: A datetime object with timezone info or None.
+        """
+        if not timestamp:
+            return None
+
+        try:
+            dt_ts: datetime = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
+
+            return UTC.convert(dt_ts)
+        except ValueError:
+            return None
 
 
 def fetch_project_details(forges: Dict[str, Forge], projects: List[Project], workers: int = -1) -> List[Project]:
@@ -185,7 +211,7 @@ def filter_non_wips(project: Project) -> Optional[Project]:
     """Reduces merge request list to just merge requests that are not marked as WIP.
 
     :param project: The project to filter.
-    :return: The project with a filtered list of merge request or None, if no merge requests remain.
+    :return: The project with a filtered list of merge requests or None, if no merge requests remain.
     """
     if not project:
         return None
@@ -248,3 +274,23 @@ def exclusive_label_filter(labels: List[str]) -> Callable:
         return project if project.merge_requests else None
 
     return exclusive_filter
+
+
+def aging_filter(days):
+    """Creates a function for selecting merge requests that are older than the given number of days.
+
+    :param days: The minimum age of a merge request.
+    :return: A function that can be used the the filter builtin.
+    """
+    now: datetime = UTC.convert(datetime.utcnow())
+
+    def mr_aging_filter(project: Project) -> Optional[Project]:
+        if not project:
+            return None
+
+        project.merge_requests = list(filter(lambda mr: (now - mr.created_at).days > days,
+                                             project.merge_requests))
+
+        return project if project.merge_requests else None
+
+    return mr_aging_filter
