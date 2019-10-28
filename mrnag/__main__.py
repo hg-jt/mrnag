@@ -3,6 +3,7 @@ import csv
 import sys
 from argparse import ArgumentParser, Namespace
 from datetime import datetime
+from itertools import tee
 from typing import Iterable
 from mrnag import Project, aging_filter, inclusive_label_filter, exclusive_label_filter, fetch_project_details,\
     filter_non_wips, filter_wips, parse_config
@@ -14,6 +15,7 @@ def get_cli_parser() -> ArgumentParser:
     wip_group = parser.add_mutually_exclusive_group()
 
     parser.add_argument('-c', '--config', required=True, help='Configuration file (YAML).')
+    parser.add_argument('-t', '--to-format', choices=['csv', 'md'], help='The output format.')
     wip_group.add_argument('--only-wips',
                            action='store_true',
                            help='Limit results to only MRs marked as a "work in progress"')
@@ -51,6 +53,39 @@ def csv_formatter(projects: Iterable[Project]) -> None:
             ])
 
 
+def md_formatter(projects: Iterable[Project]) -> None:
+    """Formats the give projects as a CSV and prints it to stdout.
+
+    :param projects: An iterable collections of projects.
+    """
+    now: datetime = datetime.now()
+    projects, projects_stats_itr = tee(projects)
+    mr_count: int = 0
+    proj_count: int = 0
+
+    for proj in projects_stats_itr:
+        if proj.merge_requests:
+            proj_count += 1
+
+        mr_count += len(proj.merge_requests)
+
+    print(f"# Mr. Nag: {now.strftime('%Y-%m-%d')}\n")
+    print(f'There are {mr_count} merge request{"s" if mr_count > 1 else ""}',
+          f'in {proj_count} project{"s" if proj_count > 1 else ""}\n')
+
+    for project in projects:
+        print(f'## {project.name}\n')
+
+        for mr in project.merge_requests:
+            print(f'### {mr.title}\n')
+            print(f'{mr.author}, {mr.created_at.diff_for_humans()}')
+            print(f'{mr.approvals.total}/{mr.approvals.required} approvals,',
+                  f'{mr.comment_count} comment{"s" if mr.comment_count == 0 or mr.comment_count > 1 else ""}')
+            print()
+
+        print()
+
+
 def mrnag():
     """Executes the Mr. Nag command line interface."""
     parser = get_cli_parser()
@@ -73,7 +108,10 @@ def mrnag():
     if args.minimum_age:
         proj_list = filter(aging_filter(args.minimum_age), proj_list)
 
-    csv_formatter(proj_list)
+    if args.to_format == 'md':
+        md_formatter(proj_list)
+    else:
+        csv_formatter(proj_list)
 
 
 mrnag()
