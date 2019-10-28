@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
 from os import environ
 from typing import Callable, Dict, List, Optional, Tuple
-from pendulum.tz import UTC
+import pendulum
 from requests import Response, Session
 from yaml import SafeLoader, load as yml_load
 
@@ -31,6 +31,7 @@ class MergeRequest:
     wip: bool = False
     comment_count: int = 0
     merge_request_iid: int = None
+    url: str = None
 
 
 @dataclass
@@ -40,6 +41,7 @@ class Project:
     forge: str
     name: str
     merge_requests: List[MergeRequest] = field(default_factory=list, init=False)
+    url: str = None
 
 
 @dataclass
@@ -109,7 +111,8 @@ class Gitlab(Forge):
                 self.timestamp_to_datetime(mr['updated_at']),
                 mr['labels'],
                 comment_count=mr['user_notes_count'],
-                merge_request_iid=mr['iid']
+                merge_request_iid=mr['iid'],
+                url=mr['web_url']
             )
 
             resp = self.session.get(
@@ -145,6 +148,8 @@ class Gitlab(Forge):
         if not project.name:
             project.name = gl_project.get('name', gl_project.get('id'))
 
+        project.url = gl_project['web_url']
+
         return project
 
     def timestamp_to_datetime(self, timestamp) -> Optional[datetime]:
@@ -159,9 +164,7 @@ class Gitlab(Forge):
             return None
 
         try:
-            dt_ts: datetime = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
-
-            return UTC.convert(dt_ts)
+            return pendulum.parse(timestamp)
         except ValueError:
             return None
 
@@ -282,7 +285,7 @@ def aging_filter(days):
     :param days: The minimum age of a merge request.
     :return: A function that can be used the the filter builtin.
     """
-    now: datetime = UTC.convert(datetime.utcnow())
+    now: datetime = pendulum.now(tz='UTC')
 
     def mr_aging_filter(project: Project) -> Optional[Project]:
         if not project:
