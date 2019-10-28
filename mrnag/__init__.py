@@ -152,7 +152,8 @@ class Gitlab(Forge):
 
         return project
 
-    def timestamp_to_datetime(self, timestamp) -> Optional[datetime]:
+    @staticmethod
+    def timestamp_to_datetime(timestamp) -> Optional[datetime]:
         """Convert a timestamp string to a datetime object with timezone info.
 
         GitLab's API uses timestamp strings in the format: %Y-%m-%dT%H:%M:%S.%fZ.
