@@ -12,5 +12,5 @@
 # Development dependencies
 # -------------------------
 coverage==4.5.4
-pylint==2.4.2
+pylint==2.4.3
 setuptools-lint==0.6.0

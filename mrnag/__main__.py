@@ -2,10 +2,8 @@
 import csv
 import sys
 from argparse import ArgumentParser, Namespace
-from datetime import datetime
 from typing import Iterable
-from mrnag import Project, aging_filter, inclusive_label_filter, exclusive_label_filter, fetch_project_details,\
-    filter_non_wips, filter_wips, parse_config
+from mrnag import Project, parse_config, process_projects
 
 
 def get_cli_parser() -> ArgumentParser:
@@ -21,6 +19,11 @@ def get_cli_parser() -> ArgumentParser:
     parser.add_argument('--include', action='append', help='Inclusive filter for MR labels.')
     parser.add_argument('--exclude', action='append', help='Exclusive filter for MR labels.')
     parser.add_argument('--minimum-age', type=int, help='Minimum age (in days).')
+    parser.add_argument('--order-by',
+                        choices=['created', 'updated'],
+                        default='created',
+                        help='The field to order merge requests by within each project.')
+    parser.add_argument('--sort', choices=['asc', 'desc'], default='asc', help='The sort direction.')
 
     return parser
 
@@ -53,27 +56,19 @@ def csv_formatter(projects: Iterable[Project]) -> None:
 
 def mrnag():
     """Executes the Mr. Nag command line interface."""
-    parser = get_cli_parser()
-    args: Namespace = parser.parse_args()
-    forges, projects = parse_config(args.config)
+    args: Namespace = get_cli_parser().parse_args()
 
-    proj_list: Iterable[Project] = fetch_project_details(forges, projects)
+    projects = process_projects(
+        parse_config(args.config),
+        args.only_wips,
+        args.wips,
+        args.include,
+        args.exclude,
+        args.minimum_age,
+        args.order_by,
+        args.sort)
 
-    if args.only_wips:  # only WIPs
-        proj_list = filter(filter_wips, proj_list)
-    elif not args.wips:  # only non-WIPs
-        proj_list = filter(filter_non_wips, proj_list)
-
-    if args.include:
-        proj_list = filter(inclusive_label_filter(args.include), proj_list)
-
-    if args.exclude:
-        proj_list = filter(exclusive_label_filter(args.exclude), proj_list)
-
-    if args.minimum_age:
-        proj_list = filter(aging_filter(args.minimum_age), proj_list)
-
-    csv_formatter(proj_list)
+    csv_formatter(projects)
 
 
 mrnag()
