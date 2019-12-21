@@ -2,14 +2,18 @@
 
 MIT License -- Copyright (c) 2019 hg-jt
 """
+import logging
 from datetime import datetime
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
 from os import environ
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Iterable, List, Optional
 import pendulum
 from requests import Response, Session
 from yaml import SafeLoader, load as yml_load
+
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -57,10 +61,25 @@ class Forge:
     type: str
     api_url: str
     token: str
+    projects: List[Project] = field(default_factory=list)
 
     def __post_init__(self):
-        if not self.token:
+        """Post-initialization for ``token`` and ``projects``."""
+        if not self.token:  # get token from environment variable
             self.token = environ.get(f'{self.id}_{self.type}_TOKEN'.upper())
+
+        if self.projects:  # find "raw" dicts and convert them to Project objects
+            projects: List[Project] = []
+
+            for project in self.projects:
+                if isinstance(project, dict):
+                    projects.append(Project(**project, forge=self.id))
+                elif isinstance(project, Project):
+                    projects.append(project)
+                else:
+                    LOG.warning('Unable to parse project metadata, unexpected type: %s', type(project))
+
+            self.projects = projects
 
     def fetch_project(self, project: Project) -> Project:
         """Fetch the project details.
@@ -101,7 +120,9 @@ class Gitlab(Forge):
         resp: Response = self.session.get(f'{self.api_url}/projects/{project.project_id}/merge_requests?state=opened')
 
         if not resp.ok:
-            raise Exception('Unable to merge request details')  # TODO: smoother handling of error state
+            # TODO: mark the project to indicate something went wrong
+            # TODO: smoother handling of error state
+            raise Exception('Unable to merge request details')
 
         for mr in resp.json():
             merge_request: MergeRequest = MergeRequest(
@@ -123,7 +144,6 @@ class Gitlab(Forge):
                 raise Exception('Unable to get approval details')  # TODO: smoother handling of error state
 
             approvals: dict = resp.json()
-
             merge_request.approvals.total = len(approvals['approved_by'])
             merge_request.approvals.required = approvals.get('approvals_required', 0)
             merge_request.wip = mr.get('work_in_progress', False)
@@ -152,7 +172,8 @@ class Gitlab(Forge):
 
         return project
 
-    def timestamp_to_datetime(self, timestamp) -> Optional[datetime]:
+    @staticmethod
+    def timestamp_to_datetime(timestamp) -> Optional[datetime]:
         """Convert a timestamp string to a datetime object with timezone info.
 
         GitLab's API uses timestamp strings in the format: %Y-%m-%dT%H:%M:%S.%fZ.
@@ -169,31 +190,23 @@ class Gitlab(Forge):
             return None
 
 
-def fetch_project_details(forges: Dict[str, Forge], projects: List[Project], workers: int = -1) -> List[Project]:
-    """Fetches project details for all the given projects.
+def fetch_project_details(forges: List[Forge], workers: int = -1) -> List[Project]:
+    """Fetch the project and merge request details across all forges.
 
-    :param forges: A dictionary of forges (key -> Forge).
-    :param projects: A list of projects.
-    :param workers: The number of worker threads. Defautls to -1, which will set the
-                    worker count to the length of the project list.
-    :return: A list of hydrated projects.
+    :param forges: A list of Forge objects to process.
+    :param workers: The maximum number of threads to use.
+    :return: A list of Project objects.
     """
-    if workers < 0:
-        workers = len(projects)
+    projects: List[Project] = []
 
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        def project_details(project: Project) -> Project:
-            forge: Forge = forges.get(project.forge)
+    for forge in forges:
+        if workers < 0:
+            workers = len(forge.projects)
 
-            if not forge:
-                # TODO: mark the project to indicate something went wrong
-                return project
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            projects.extend(list(executor.map(forge.fetch_project, forge.projects)))
 
-            return forge.fetch_project(project)
-
-        hydrated_projects: List[Project] = executor.map(project_details, projects)
-
-    return hydrated_projects
+    return projects
 
 
 def filter_wips(project: Project) -> Optional[Project]:
@@ -224,11 +237,11 @@ def filter_non_wips(project: Project) -> Optional[Project]:
     return project if project.merge_requests else None
 
 
-def parse_config(filename: str) -> Tuple[Dict[str, Forge], List[Project]]:
+def parse_config(filename: str) -> List[Forge]:
     """Parses the configuration file.
 
     :param filename:
-    :return: A tuple containing a dictionary of key -> forge and a list of projects.
+    :return: A list of forges.
     """
     forges: List[Forge] = []
     forge_classes = {
@@ -238,13 +251,11 @@ def parse_config(filename: str) -> Tuple[Dict[str, Forge], List[Project]]:
     with open(filename, 'r') as config_file:
         app_config = yml_load(config_file, Loader=SafeLoader)
 
-    for forge in app_config.get('forges'):
-        forge_class = forge_classes.get(forge.get('type', '').lower(), Forge)
-        forges.append(forge_class(**forge))
+    for forge_md in app_config.get('forges'):
+        forge_class = forge_classes.get(forge_md.get('type', '').lower(), Forge)
+        forges.append(forge_class(**forge_md))
 
-    projects: List[Project] = [Project(**project) for project in app_config.get('projects')]
-
-    return {forge.id: forge for forge in forges}, projects
+    return forges
 
 
 def inclusive_label_filter(labels: List[str]) -> Callable:
@@ -297,3 +308,63 @@ def aging_filter(days):
         return project if project.merge_requests else None
 
     return mr_aging_filter
+
+
+def process_projects(forges: List[Forge],
+                     only_wips: bool = False,
+                     wips: bool = False,
+                     include: Optional[List[str]] = None,
+                     exclude: Optional[List[str]] = None,
+                     minimum_age: int = 0,
+                     order_by: str = 'created',
+                     sort: str = 'desc') -> List[Project]:
+    """
+    Processes projects by fetching additional details from the configured
+    forges and applying filtering and sorting.
+
+    *NOTE*: Most of the filters and sorting can be done at the API layer, but
+    is currently implemented here, after *all* the data is fetched. This should
+    be revisited when there are multiple forges implemented.
+
+    :param forges: A list of forges.
+    :param only_wips: A flag to filter results to just merge requests that are
+                      marked as a "work in progress". Disabled by default.
+    :param wips: A flag to include merge requests that are marked as a
+                 "work in progress". Disabled by default.
+    :param include: A list of labels to filter merge requests by. Disabled by default.
+    :param exclude: A list of labels to filter out merge requests. Disabled by default.
+    :param minimum_age: The minimum age (in days) to filter merge requests by. Default is 0.
+    :param order_by: The field to order by (e.g. 'created' or 'updated'). Default is 'created'.
+    :param sort: The direction to sort by (e.g. 'asc' or 'desc'). Default is 'asc'.
+    :return: A list of projects.
+    """
+    if not forges:
+        raise ValueError('No forge configuration provided')
+
+    proj_itr: Iterable[Project] = fetch_project_details(forges)
+
+    if only_wips:  # only WIPs
+        proj_itr = filter(filter_wips, proj_itr)
+    elif not wips:  # only non-WIPs
+        proj_itr = filter(filter_non_wips, proj_itr)
+
+    if include:
+        proj_itr = filter(inclusive_label_filter(include), proj_itr)
+
+    if exclude:
+        proj_itr = filter(exclusive_label_filter(exclude), proj_itr)
+
+    if minimum_age:
+        proj_itr = filter(aging_filter(minimum_age), proj_itr)
+
+    projects = list(proj_itr)
+
+    if order_by:
+        if order_by.lower() == 'updated':
+            for project in projects:
+                project.merge_requests.sort(key=lambda mr: mr.updated_at, reverse=(sort == 'desc'))
+        else:  # default to sorting by creation date
+            for project in projects:
+                project.merge_requests.sort(key=lambda mr: mr.created_at, reverse=(sort == 'desc'))
+
+    return projects

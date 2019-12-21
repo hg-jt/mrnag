@@ -20,19 +20,19 @@ are then filtered and processed by a formatter to display/export the data.
 
 ## Configuring Mr. Nag
 
-*Mr. Nag* is configured with a YAML file. There are two section in the config
-file: *Forges* and *Projects*.
+*Mr. Nag* is configured with a YAML file that describes a collection of *Forges*
+and the projects within that forge.
 
-The *forges* section of the config file defines the forges that Mr. Nag will use
-to fetch projcet details. These configuration contain the API key/token required
-by the individual forges. This can be expressed directly in the configuration
-file or via an environment variable (e.g. if the forge type is "gitlab" and the
-id is "abc, the API token environment variable would be `ABC_GITLAB_TOKEN`):
+Each *forge* entry contains some metadata about the forge and a list of
+projects. The metadata contains the API key/token required by the individual
+forges. This can be expressed directly in the configuration file or via an
+environment variable (e.g. if the forge type is "gitlab" and the id is "abc, the
+API token environment variable would be `ABC_GITLAB_TOKEN`):
 
-The *projects* section of the config file defines all of the projects that
-Mr. Nag will report information about. The project configurations should include
-a name for the project along with the minimal metadata need to use the Forge's
-API (e.g. forge id, project id).
+The *projects* entries define all of the projects that Mr. Nag will report
+information about. The project configurations should include a name for the
+project along with the minimal metadata needed to use the Forge's API
+(e.g. project id).
 
 
 **Example Mr. Nag Configuration**:
@@ -45,24 +45,28 @@ API (e.g. forge id, project id).
 #  - type (string, required)
 #  - api_url (string, required)
 #  - token (string, optional)
+#  - projects (list, optional)
 #
 # Project:
 #  - project_id (int, required)
-#  - forge (string, required)
 #  - name (string, required)
 forges:
   - id: abc
     type: gitlab
     api_url: https://abc-gitlab.yourdomain.com/api/v4
     token: xxxxxxxxxxxxxxxxxxxx
-
-projects:
-- forge: abc
-  name: Foo Service
-  project_id: 101
-- forge: abc
-  name: Bar App
-  project_id: 16
+    projects:
+    - name: Foo Service
+      project_id: 101
+    - name: Bar App
+      project_id: 16
+  - id: github
+    type github
+    api_url: https://api.github.com
+    token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    project:
+      - name: Project
+        project_id: ?
 ```
 
 
