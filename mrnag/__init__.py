@@ -34,13 +34,13 @@ class MergeRequest:
     labels: List[str] = field(default_factory=list)
     wip: bool = False
     comment_count: int = 0
-    merge_request_iid: int = None
+    merge_request_id: int = None
     url: str = None
 
 
 @dataclass
 class Project:
-    """Represents a project in a source code management system (a.k.a a "forge")."""
+    """Represents a project in a source code management system (i.e. a "forge")."""
     project_id: int
     forge: str
     name: str
@@ -56,6 +56,8 @@ class Forge:
     environment variable that uses the forge type and forge id. For example,
     if the forge type is "gitlab" and the id is "abc, the API token environment
     variable would be ABC_GITLAB_TOKEN.
+
+    *NOTE*: Dashes will be removed from the forge id.
     """
     id: str
     type: str
@@ -66,7 +68,7 @@ class Forge:
     def __post_init__(self):
         """Post-initialization for ``token`` and ``projects``."""
         if not self.token:  # get token from environment variable
-            self.token = environ.get(f'{self.id}_{self.type}_TOKEN'.upper())
+            self.token = environ.get(f"{self.id.replace('-', '')}_{self.type}_TOKEN".upper())
 
         if self.projects:  # find "raw" dicts and convert them to Project objects
             projects: List[Project] = []
@@ -122,17 +124,17 @@ class Gitlab(Forge):
         if not resp.ok:
             # TODO: mark the project to indicate something went wrong
             # TODO: smoother handling of error state
-            raise Exception('Unable to merge request details')
+            raise Exception('Unable to get list of merge request.')
 
         for mr in resp.json():
             merge_request: MergeRequest = MergeRequest(
                 mr['title'],
                 mr.get('author', {}).get('name'),
-                self.timestamp_to_datetime(mr['created_at']),
-                self.timestamp_to_datetime(mr['updated_at']),
+                timestamp_to_datetime(mr['created_at']),
+                timestamp_to_datetime(mr['updated_at']),
                 mr['labels'],
                 comment_count=mr['user_notes_count'],
-                merge_request_iid=mr['iid'],
+                merge_request_id=mr['iid'],
                 url=mr['web_url']
             )
 
@@ -163,7 +165,7 @@ class Gitlab(Forge):
         if not resp.ok:
             raise Exception('Unable to fetch project details')  # TODO: smoother handling of error state
 
-        gl_project = resp.json()
+        gl_project: dict = resp.json()
 
         if not project.name:
             project.name = gl_project.get('name', gl_project.get('id'))
@@ -172,22 +174,20 @@ class Gitlab(Forge):
 
         return project
 
-    @staticmethod
-    def timestamp_to_datetime(timestamp) -> Optional[datetime]:
-        """Convert a timestamp string to a datetime object with timezone info.
 
-        GitLab's API uses timestamp strings in the format: %Y-%m-%dT%H:%M:%S.%fZ.
+def timestamp_to_datetime(timestamp) -> Optional[datetime]:
+    """Convert a timestamp string to a datetime object with timezone info.
 
-        :param timestamp: timestamp string.
-        :return: A datetime object with timezone info or None.
-        """
-        if not timestamp:
-            return None
+    :param timestamp: timestamp string.
+    :return: A datetime object with timezone info or None.
+    """
+    if not timestamp:
+        return None
 
-        try:
-            return pendulum.parse(timestamp)
-        except ValueError:
-            return None
+    try:
+        return pendulum.parse(timestamp)
+    except ValueError:
+        return None
 
 
 def fetch_project_details(forges: List[Forge], workers: int = -1) -> List[Project]:
