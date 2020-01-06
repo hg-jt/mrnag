@@ -175,6 +175,119 @@ class Gitlab(Forge):
         return project
 
 
+@dataclass
+class Github(Forge):
+    """Provides a minimal GitHub client for fetching project and merge request details."""
+    session: Session = field(default_factory=Session, init=False, repr=False)
+    repo_and_pr_query = """
+        query RepoWithPullRequests($repo_owner: String!,
+                                   $repo_name: String!,
+                                   $pr_count: Int!,
+                                   $pr_cursor: String,
+                                   $label_cursor: String,
+                                   $review_cursor: String,
+                                   $bpr_cursor: String) {
+          repository(owner: $repo_owner, name: $repo_name) {
+            name
+            url
+            pullRequests(states: OPEN, first: $pr_count, after: $pr_cursor) {
+              totalCount
+              nodes {
+                number
+                title
+                createdAt
+                updatedAt
+                author {
+                  login
+                }
+                permalink
+                baseRefName
+                labels(first: 10, after: $label_cursor) {
+                  nodes {
+                    name
+                  }
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                }
+                reviews(first: 10, after: $review_cursor) {
+                  totalCount
+                  nodes {
+                    state
+                  }
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                }
+              }
+              pageInfo {
+                endCursor
+                hasNextPage
+              }
+            }
+            branchProtectionRules(first: 25, after: $bpr_cursor) {
+              totalCount
+              nodes {
+                requiredApprovingReviewCount
+                requiresApprovingReviews
+                pattern
+              }
+              pageInfo {
+                endCursor
+                hasNextPage
+              }
+            }
+          }
+        }
+    """
+
+    def fetch_project(self, project: Project) -> Project:
+        owner, repo = project.project_id.split('/')
+        resp: Response = self.session.post(
+            'https://api.github.com/graphql',
+            json={
+                'query': self.repo_and_pr_query,
+                'variables': {
+                    'repo_owner': owner,
+                    'repo_name': repo,
+                    'pr_count': 10,
+                    'pr_cursor': None,
+                    'label_cursor': None,
+                    'bpr_cursor': None
+                }
+            },
+            headers={'Authorization': f'token {self.token}'}
+        )
+
+        if not resp.ok:
+            # TODO: mark the project to indicate something went wrong
+            # TODO: smoother handling of error state
+            raise Exception('Unable to get list of merge requests.')
+
+        data: dict = resp.json().get('data', {})
+        project.url = data.get('url')
+
+        for pr in data.get('repository', {}).get('pullRequests').get('nodes'):
+            merge_request: MergeRequest = MergeRequest(
+                pr['title'],
+                pr.get('author', {}).get('login'),
+                timestamp_to_datetime(pr['createdAt']),
+                timestamp_to_datetime(pr['updatedAt']),
+                [label.get('name') for label in pr.get('labels', {}).get('nodes', [])],
+                comment_count=pr.get('reviews').get('totalCount', 0),  # TODO: check state?
+                merge_request_id=pr['number'],
+                url=pr['permalink']
+            )
+
+            project.merge_requests.append(merge_request)
+            # TODO: get WIP status
+            # TODO: parse approval info
+
+        return project
+
+
 def timestamp_to_datetime(timestamp) -> Optional[datetime]:
     """Convert a timestamp string to a datetime object with timezone info.
 
@@ -245,7 +358,8 @@ def parse_config(filename: str) -> List[Forge]:
     """
     forges: List[Forge] = []
     forge_classes = {
-        'gitlab': Gitlab
+        'gitlab': Gitlab,
+        'github': Github
     }
 
     with open(filename, 'r') as config_file:

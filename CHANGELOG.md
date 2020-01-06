@@ -6,6 +6,7 @@
   + Initial project
     - *mrnag* module & CLI via `python -m mrnag`
     - Support for multiple GitLab forges
+    - Experimental support for multiple GitHub forges
     - Filtering
       + Inclusive/exclusive labels
       + WIP/non-WIPed open merge requests
