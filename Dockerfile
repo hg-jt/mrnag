@@ -1,4 +1,4 @@
-FROM python:3.7-alpine3.10
+FROM python:3.8-alpine3.11
 
 # development packages that will be installed before pip is run and purged after
 ARG DEV_PKGS='linux-headers python3-dev gcc g++ musl-dev libressl-dev libffi-dev'
