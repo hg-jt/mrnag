@@ -19,7 +19,7 @@ LOG = logging.getLogger(__name__)
 @dataclass
 class MergeRequestApprovals:
     """Represents the approvals for a merge/pull request"""
-    total: int = 0
+    count: int = 0
     required: int = 0
 
 
@@ -226,11 +226,14 @@ def fetch_project_details(forges: List[Forge], workers: int = -1) -> List[Projec
     projects: List[Project] = []
 
     for forge in forges:
-        if workers < 0:
-            workers = len(forge.projects)
+        try:
+            if workers < 0:
+                workers = len(forge.projects)
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            projects.extend(list(executor.map(forge.fetch_project, forge.projects)))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                projects.extend(list(executor.map(forge.fetch_project, forge.projects)))
+        except NotImplementedError:
+            LOG.exception('Unable to fetch projects for forge: %s (%s)', forge.type, forge.id)
 
     return projects
 
