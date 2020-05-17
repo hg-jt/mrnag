@@ -11,6 +11,7 @@
       + WIP/non-WIPed open merge requests
       + Aging merge requests
     - Sorting
+    - Support for assignees on merge requests
 
 
 [Unreleased]: https://github.com/hg-jt/mrnag

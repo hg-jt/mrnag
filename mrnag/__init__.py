@@ -24,6 +24,13 @@ class MergeRequestApprovals:
 
 
 @dataclass
+class LabelFilters:
+    """Represents the label filters to apply to a project."""
+    include: List[str] = field(default_factory=list)
+    exclude: List[str] = field(default_factory=list)
+
+
+@dataclass
 class MergeRequest:
     """Represents metadata about a merge/pull request."""
     title: str
@@ -36,6 +43,7 @@ class MergeRequest:
     comment_count: int = 0
     merge_request_id: int = None
     url: str = None
+    assignees: List[str] = field(default_factory=list, init=False)
 
 
 @dataclass
@@ -45,8 +53,17 @@ class Project:
     forge: str
     name: str
     merge_requests: List[MergeRequest] = field(default_factory=list, init=False)
+    labels: LabelFilters = field(default_factory=LabelFilters)
     url: str = None
+    wip_count: int = 0
 
+    def __post_init__(self):
+        """Post-initialization for parsing ``labels``."""
+        if isinstance(self.labels, dict):
+            self.labels = LabelFilters(
+                include=self.labels.get('include', []),
+                exclude=self.labels.get('exclude', [])
+            )
 
 @dataclass
 class Forge:
@@ -130,13 +147,16 @@ class Gitlab(Forge):
             merge_request: MergeRequest = MergeRequest(
                 mr['title'],
                 mr.get('author', {}).get('name'),
-                timestamp_to_datetime(mr['created_at']),
-                timestamp_to_datetime(mr['updated_at']),
+                timestamp_to_datetime(mr['created_at'], tz='utc'),
+                timestamp_to_datetime(mr['updated_at'], tz='utc'),
                 mr['labels'],
                 comment_count=mr['user_notes_count'],
                 merge_request_id=mr['iid'],
                 url=mr['web_url']
             )
+
+            for assignee in mr.get('assignees', []):
+                merge_request.assignees.append(assignee.get('username'))
 
             resp = self.session.get(
                 f'{self.api_url}/projects/{project.project_id}/merge_requests/{mr["iid"]}/approvals'
@@ -146,9 +166,12 @@ class Gitlab(Forge):
                 raise Exception('Unable to get approval details')  # TODO: smoother handling of error state
 
             approvals: dict = resp.json()
-            merge_request.approvals.total = len(approvals['approved_by'])
+            merge_request.approvals.count = len(approvals['approved_by'])
             merge_request.approvals.required = approvals.get('approvals_required', 0)
             merge_request.wip = mr.get('work_in_progress', False)
+
+            if merge_request.wip:
+                project.wip_count += 1
 
             project.merge_requests.append(merge_request)
 
@@ -175,7 +198,7 @@ class Gitlab(Forge):
         return project
 
 
-def timestamp_to_datetime(timestamp) -> Optional[datetime]:
+def timestamp_to_datetime(timestamp: str, tz: Optional[str] = None) -> Optional[datetime]:
     """Convert a timestamp string to a datetime object with timezone info.
 
     :param timestamp: timestamp string.
@@ -185,6 +208,9 @@ def timestamp_to_datetime(timestamp) -> Optional[datetime]:
         return None
 
     try:
+        if tz:
+            return pendulum.parse(timestamp, tz=tz)
+
         return pendulum.parse(timestamp)
     except ValueError:
         return None
@@ -265,9 +291,12 @@ def inclusive_label_filter(labels: List[str]) -> Callable:
     :return: A function that can be used with the filter builtin.
     """
     def inclusive_filter(project: Project):
-        project.merge_requests = list(
-            filter(lambda mr: any(label in mr.labels for label in labels), project.merge_requests)
-        )
+        _labels: List[str] = labels + project.labels.include
+
+        if _labels:
+            project.merge_requests = list(
+                filter(lambda mr: any(label in mr.labels for label in _labels), project.merge_requests)
+            )
 
         return project if project.merge_requests else None
 
@@ -281,9 +310,12 @@ def exclusive_label_filter(labels: List[str]) -> Callable:
     :return: A function that can be used with the filter builtin.
     """
     def exclusive_filter(project: Project):
-        project.merge_requests = list(
-            filter(lambda mr: any(label not in mr.labels for label in labels), project.merge_requests)
-        )
+        _labels: List[str] = labels + project.labels.exclude
+
+        if _labels:
+            project.merge_requests = list(
+                filter(lambda mr: not any(label in mr.labels for label in _labels), project.merge_requests)
+            )
 
         return project if project.merge_requests else None
 
@@ -348,11 +380,8 @@ def process_projects(forges: List[Forge],
     elif not wips:  # only non-WIPs
         proj_itr = filter(filter_non_wips, proj_itr)
 
-    if include:
-        proj_itr = filter(inclusive_label_filter(include), proj_itr)
-
-    if exclude:
-        proj_itr = filter(exclusive_label_filter(exclude), proj_itr)
+    proj_itr = filter(inclusive_label_filter(include or []), proj_itr)
+    proj_itr = filter(exclusive_label_filter(exclude or []), proj_itr)
 
     if minimum_age:
         proj_itr = filter(aging_filter(minimum_age), proj_itr)
