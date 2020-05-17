@@ -104,40 +104,75 @@ Stepping through this command:
 
 ## Configuring Your Development Environment
 
-### Project Dependencies
-
-*mrnag* requires the following dependencies:
-
-* [Python](https://www.python.org/) (3.7.x)
-
-The following dependencies are optional:
-
-* [PyEnv](https://github.com/yyuu/pyenv)
-
-* [Virtualenv](https://virtualenv.pypa.io/)
-
-* [Virtualenvwrapper](https://virtualenvwrapper.readthedocs.org/)
+*mrnag* requires the 3.7 (or newer).
 
 
-To install Python 3.7:
+### To Install Python:
 
-* Install pyenv
+* Install [pyenv](https://github.com/yyuu/pyenv)
 
-* Install Python
+    On OS X with [Homebrew]:
+
+    ```sh
+    brew update
+    brew install pyenv
+    ```
+
+    For other platforms, see the [pyenv] installation instructions.
+
+* Configure *pyenv*
+
+    To enable *pyenv*, you need to add the following to your shell configuration
+    (*~/.bash_profile* or *.bashrc* for bash or *~/.zshrc* for zsh):
+
+    ```sh
+    eval "$(pyenv init -)"
+    ```
+
+    > *NOTE*: The pyenv configuration shuould be added towards the end of your
+    > shell configuration file to ensure that the pyenv shims are added to the
+    > front of your configured `PATH`. See the [Basic GitHub Checkout] section
+    > in pyenv's documentation for more information about shell configuration.
+
+* Install the version of Python defined in the *.python-version* file.
 
     ```sh
     cd mrnag
     pyenv install  # the Python version is defined in a file called .python-version
     ```
 
-If you are using virtualenv/virtualenvwrapper:
+### Install Project Dependencies
 
-```sh
-mkvirtualenv -p $(pyenv which python3.7) mrnag -a .
-```
+* Create a project specific virtual environment to isolate dependencies
 
-Install Python dependencies:
+    Use the built-in [venv] module to create a local directory called "venv"
+    with all project dependencies:
+    
+    ```sh
+    python -m venv --prompt mrnag venv
+    ```
 
-```
-pip install -r requirements.txt
-```
+    The project's virtual environment can be activated by sourcing the
+    `activate` script that matches your shell. For example when using bash/zsh,
+    run:
+
+    ```sh
+    source venv/bin/activate
+    ```
+
+* Upgrade Pip
+
+    ```sh
+    pip install --upgrade pip
+    ```
+
+* Install Python dependencies:
+
+    ```sh
+    pip install -r requirements.txt
+    ```
+
+[Homebrew]: https://brew.sh/
+[pyenv]: https://github.com/yyuu/pyenv
+[Basic GitHub Checkout]: https://github.com/pyenv/pyenv#basic-github-checkout
+[venv]: https://docs.python.org/3/tutorial/venv.html
