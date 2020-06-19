@@ -7,13 +7,17 @@ for a collection of projects across one or more *forges*. The intention is to
 support multiple forges, with GitLab being the focus of the initial
 implementation.
 
-> *Terminology*: In this context [forge] refers to a colloaborative web-based
+> *Terminology*: In this context [forge] refers to a collaborative web-based
 > SCM tool (e.g. GitHub, GitLab, BitBucket, etc.).
 
 *mrnag* works by taking a minimal project configuration and enriching it through
 API calls to the associated forge. The result is a hydrated metadata object that
 includes information about the project and it's merge requests. These projects
 are then filtered and processed by a formatter to display/export the data.
+
+In addtion to providing a collection of utilities, *mrnag* includes a CLI and a
+web service implementation intended to be used as an integration point with a
+Slack "slash command".
 
 [forge]: https://en.wikipedia.org/wiki/Forge_(software)
 

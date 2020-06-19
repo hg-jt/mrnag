@@ -2,6 +2,9 @@
 
 MIT License -- Copyright (c) 2019 hg-jt
 """
+__version__: str = '1.0.0.dev0'
+
+
 import logging
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -56,6 +59,8 @@ class Project:
     labels: LabelFilters = field(default_factory=LabelFilters)
     url: str = None
     wip_count: int = 0
+    last_activity_at: Optional[datetime] = None
+    enabled: bool = True
 
     def __post_init__(self):
         """Post-initialization for parsing ``labels``."""
@@ -194,6 +199,7 @@ class Gitlab(Forge):
             project.name = gl_project.get('name', gl_project.get('id'))
 
         project.url = gl_project['web_url']
+        project.last_activity_at = timestamp_to_datetime(gl_project.get('last_activity_at'), tz='utc')
 
         return project
 
@@ -226,12 +232,14 @@ def fetch_project_details(forges: List[Forge], workers: int = -1) -> List[Projec
     projects: List[Project] = []
 
     for forge in forges:
+        project_iter: Iterable[Project] = (proj for proj in forge.projects if proj.enabled)
+
         try:
             if workers < 0:
                 workers = len(forge.projects)
 
             with ThreadPoolExecutor(max_workers=workers) as executor:
-                projects.extend(list(executor.map(forge.fetch_project, forge.projects)))
+                projects.extend(list(executor.map(forge.fetch_project, project_iter)))
         except NotImplementedError:
             LOG.exception('Unable to fetch projects for forge: %s (%s)', forge.type, forge.id)
 
@@ -269,13 +277,16 @@ def filter_non_wips(project: Project) -> Optional[Project]:
 def parse_config(filename: str) -> List[Forge]:
     """Parses the configuration file.
 
-    :param filename:
+    :param filename: Path the a configuration file.
     :return: A list of forges.
     """
     forges: List[Forge] = []
     forge_classes = {
         'gitlab': Gitlab
     }
+
+    if not filename:
+        raise ValueError('No configuration provided')
 
     with open(filename, 'r') as config_file:
         app_config = yml_load(config_file, Loader=SafeLoader)
