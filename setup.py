@@ -14,7 +14,7 @@ setup(
     packages=find_packages(exclude=['tests*']),
     install_requires=[
         'pendulum==2.1.0',
-        'PyYaml==5.3.1',
+        'PyYaml==5.4',
         'requests==2.23.0'
     ],
     test_suite='tests'
